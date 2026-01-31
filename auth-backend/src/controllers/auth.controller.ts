@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { AuthService } from "../services/auth.service";
+import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from "../utils/jwt";
 
 
 export class AuthController {
@@ -35,7 +36,7 @@ export class AuthController {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
                 sameSite: 'strict',
-                path: '/auth/refresh',
+                path: '/refresh',
             });
 
             return res.status(200).json({
@@ -48,5 +49,41 @@ export class AuthController {
         } catch (error) {
             return res.status(401).json({ message: 'Invalid credentials' });
         }
+    }
+
+    static async refresh(req: Request, res: Response) {
+        const refreshToken = req.cookies.refreshToken;
+
+        if (!refreshToken) {
+        return res.status(401).json({ message: 'Refresh token missing' });
+        }
+
+        try {
+        const { sub: userId } = verifyRefreshToken(refreshToken);
+
+        const newAccessToken = generateAccessToken(userId);
+        const newRefreshToken = generateRefreshToken(userId);
+
+        res.cookie('refreshToken', newRefreshToken, {
+            httpOnly: true,
+            secure: false,
+            sameSite: 'strict',
+            path: '/auth/refresh',
+        });
+
+        return res.json({
+            accessToken: newAccessToken,
+        });
+        } catch {
+        return res.status(401).json({ message: 'Invalid refresh token' });
+        }
+    }
+
+    static async logout(_: Request, res: Response) {
+        res.clearCookie('refreshToken', {
+        path: '/auth/refresh',
+        });
+
+        return res.status(204).send();
     }
 }
