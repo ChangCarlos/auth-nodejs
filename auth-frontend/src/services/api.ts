@@ -33,12 +33,14 @@ api.interceptors.response.use(
         try {
           const { data } = await api.post("/refresh");
 
+          localStorage.setItem('accessToken', data.accessToken);
           api.defaults.headers.common["Authorization"] =
             `Bearer ${data.accessToken}`;
 
           processQueue(null, data.accessToken);
         } catch (err) {
           processQueue(err, null);
+          localStorage.removeItem('accessToken');
           return Promise.reject(err);
         } finally {
           isRefreshing = false;
