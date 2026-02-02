@@ -1,8 +1,6 @@
-import { id, th } from "zod/locales";
 import { prisma } from "../lib/prisma";
 import { comparePassword, hashPassword } from "../utils/hash";
-import { generateAccessToken, generateRefreshToken } from "../utils/jwt";
-
+import { AppError } from "../middlewares/error.middleware";
 
 type RegisterInput = {
     name: string;
@@ -10,68 +8,38 @@ type RegisterInput = {
     password: string;
 }
 
+const userSelect = {
+    id: true,
+    name: true,
+    email: true,
+};
+
 export class AuthService {
     static async register({ name, email, password }: RegisterInput) {
-        const existingUser = await prisma.user.findUnique({
-            where: { email },
-        });
-
-        if (existingUser) {
-            throw new Error('User already exists');
-        }
+        const existingUser = await prisma.user.findUnique({ where: { email } });
+        if (existingUser) throw new AppError('User already exists', 400);
 
         const passwordHash = await hashPassword(password);
-
-        const user = await prisma.user.create({
-            data: {
-                name,
-                email,
-                password: passwordHash,
-            },
+        return prisma.user.create({
+            data: { name, email, password: passwordHash },
+            select: userSelect,
         });
-
-        return user;
     }
 
     static async login(email: string, password: string) {
-        const user = await prisma.user.findUnique({
-            where: { email },
-        });
-
-        if (!user) {
-            throw new Error('Invalid credentials');
-        }
+        const user = await prisma.user.findUnique({ where: { email } });
+        if (!user) throw new AppError('Invalid credentials', 401);
 
         const isPasswordValid = await comparePassword(password, user.password);
+        if (!isPasswordValid) throw new AppError('Invalid credentials', 401);
 
-        if (!isPasswordValid) {
-            throw new Error('Invalid credentials');
-        }
-
-        const accessToken = generateAccessToken(user.id);
-        const refreshToken = generateRefreshToken(user.id);
-
-        return {
-            user: {
-                id: user.id,
-                name: user.name,
-                email: user.email,
-            },
-            accessToken,
-            refreshToken,
-        };
+        return { id: user.id, name: user.name, email: user.email };
     }
 
     static async getUserById(userId: string) {
-        const user = await prisma.user.findUnique({
+        return prisma.user.findUnique({
             where: { id: userId },
-            select: {
-                id: true,
-                name: true,
-                email: true,
-            },
+            select: userSelect,
         });
-
-        return user;
     }
 }

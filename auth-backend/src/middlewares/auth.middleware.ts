@@ -15,23 +15,16 @@ export function isAuthenticated(
     res: Response,
     next: NextFunction,
 ) {
-    const authHeader = req.headers.authorization;
-
-    if (!authHeader) {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) {
         return res.status(401).json({ message: 'Unauthorized' });
     }
 
-    const [, token] = authHeader.split(' ');
-
     try {
-        const decoded = jwt.verify(
-            token,
-            process.env.JWT_ACCESS_SECRET!,
-        );
-
-        req.userId = (decoded as jwt.JwtPayload).sub;
+        const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET!) as jwt.JwtPayload;
+        req.userId = decoded.sub;
         next();
-    } catch (error) {
+    } catch {
         return res.status(401).json({ message: 'Unauthorized' });
     }
 }

@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import { authRoutes } from './routes/auth.routes';
 import cookieParser from 'cookie-parser';
+import { errorHandler } from './middlewares/error.middleware';
 
 export const app = express();
 
@@ -15,4 +16,5 @@ app.use(cors({
 app.use(express.json());
 app.use(cookieParser());
 
-app.use(authRoutes)
+app.use(authRoutes);
+app.use(errorHandler);

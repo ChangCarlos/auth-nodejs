@@ -1,109 +1,70 @@
-import { Request, Response } from "express";
+import { Request, Response, NextFunction } from "express";
 import { AuthService } from "../services/auth.service";
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from "../utils/jwt";
-
+import { AppError } from "../middlewares/error.middleware";
+import { COOKIE_CONFIG } from "../config/constants";
 
 export class AuthController {
-    static async register(req: Request, res: Response) {
+    static async register(req: Request, res: Response, next: NextFunction) {
         try {
             const { name, email, password } = req.body;
+            const user = await AuthService.register({ name, email, password });
 
-            const user = await AuthService.register({
-                name,
-                email,
-                password,
-            });
-
-            return res.status(201).json({
+            res.status(201).json({
                 message: 'User registered successfully',
-                user: {
-                    name: user.name,
-                    email: user.email,
-                },
+                user: { name: user.name, email: user.email },
             });
         } catch (error) {
-            return res.status(500).json({ message: 'Internal server error' });
+            next(error);
         }
     }
 
-    static async login(req: Request, res: Response) {
+    static async login(req: Request, res: Response, next: NextFunction) {
         try {
             const { email, password } = req.body;
+            const user = await AuthService.login(email, password);
 
-            const { user, accessToken, refreshToken } = await AuthService.login(email, password);
+            const accessToken = generateAccessToken(user.id);
+            const refreshToken = generateRefreshToken(user.id);
 
-            res.cookie('refreshToken', refreshToken, {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'strict',
-                path: '/refresh',
-            });
-
-            return res.status(200).json({
-                message: 'Login successful',
-                user: {
-                    email: user.email,
-                },
-                accessToken,
-            });
+            res.cookie('refreshToken', refreshToken, COOKIE_CONFIG);
+            res.json({ message: 'Login successful', user: { email: user.email }, accessToken });
         } catch (error) {
-            return res.status(401).json({ message: 'Invalid credentials' });
+            next(new AppError('Invalid credentials', 401));
         }
     }
 
-    static async refresh(req: Request, res: Response) {
-        const refreshToken = req.cookies.refreshToken;
-
-        if (!refreshToken) {
-        return res.status(401).json({ message: 'Refresh token missing' });
-        }
-
+    static async refresh(req: Request, res: Response, next: NextFunction) {
         try {
-        const { sub: userId } = verifyRefreshToken(refreshToken);
+            const refreshToken = req.cookies.refreshToken;
+            if (!refreshToken) throw new AppError('Refresh token missing', 401);
 
-        const newAccessToken = generateAccessToken(userId);
-        const newRefreshToken = generateRefreshToken(userId);
+            const { sub: userId } = verifyRefreshToken(refreshToken);
+            const newAccessToken = generateAccessToken(userId);
+            const newRefreshToken = generateRefreshToken(userId);
 
-        res.cookie('refreshToken', newRefreshToken, {
-            httpOnly: true,
-            secure: false,
-            sameSite: 'strict',
-            path: '/auth/refresh',
-        });
-
-        return res.json({
-            accessToken: newAccessToken,
-        });
+            res.cookie('refreshToken', newRefreshToken, COOKIE_CONFIG);
+            res.json({ accessToken: newAccessToken });
         } catch {
-        return res.status(401).json({ message: 'Invalid refresh token' });
+            next(new AppError('Invalid refresh token', 401));
         }
     }
 
-    static async logout(_: Request, res: Response) {
-        res.clearCookie('refreshToken', {
-        path: '/auth/refresh',
-        });
-
-        return res.status(204).send();
+    static logout(_: Request, res: Response) {
+        res.clearCookie('refreshToken', { path: COOKIE_CONFIG.path });
+        res.status(204).send();
     }
 
-    static async getMe(req: Request, res: Response) {
+    static async getMe(req: Request, res: Response, next: NextFunction) {
         try {
-            const userId = req.userId;
+            if (!req.userId) throw new AppError('Unauthorized', 401);
 
-            if (!userId) {
-                return res.status(401).json({ message: 'Unauthorized' });
-            }
+            const user = await AuthService.getUserById(req.userId);
+            if (!user) throw new AppError('User not found', 404);
 
-            const user = await AuthService.getUserById(userId);
-
-            if (!user) {
-                return res.status(404).json({ message: 'User not found' });
-            }
-
-            return res.status(200).json({ user });
+            res.json({ user });
         } catch (error) {
-            return res.status(500).json({ message: 'Internal server error' });
+            next(error);
         }
     }
 }
